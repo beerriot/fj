@@ -92,15 +92,12 @@ str(<<$\\, $u, A, B, C, D, Bin/binary>>, Stack, Rev) ->
                       (Bl >= $a andalso Bl =< $c) ->
             %% coalesce UTF-16 surrogate pair
             <<$\\, $u, E, F, G, H, Bin2/binary>> = Bin,
-            str(Bin2, Stack, [utf16(A,B,C,D,E,F,G,H)|Rev]);
+            str(Bin2, Stack, [utf8(A,B,C,D,E,F,G,H)|Rev]);
         _ ->
             str(Bin, Stack, [utf8(A,B,C,D)|Rev])
     end;
 str(<<C, Bin/binary>>, Stack, Rev) ->
     str(Bin, Stack, [C|Rev]).
-
-utf16(A, B, C, D, E, F, G, H) ->
-    throw(todo).
 
 utf8($0, $0, C, D) ->
     list_to_integer([C,D], 16);
@@ -119,12 +116,29 @@ utf8(A, B, C, D) ->
      16#80 bor (LeftMid bsl 2) bor (Middle bsr 2),
      16#80 bor ((Middle bsl 6) band 16#FF) bor Right].
 
+utf8(_A, B, C, D, _E, F, G, H) -> % A = E = "d"
+    HL = hexval(B),
+    HM = hexval(C),
+    HR = hexval(D),
+    LL = hexval(F),
+    LM = hexval(G),
+    LR = hexval(H),
+
+    HL8 = (((HL band 16#03) bsl 2) bor (HM bsr 2))+1,
+
+    [16#F0 bor (HL8 bsr 2),
+     16#80 bor ((HL8 band 16#03) bsl 4) bor
+         ((HM band 16#03) bsl 2) bor (HR bsr 2),
+     16#80 bor ((HR band 16#03) bsl 4) bor
+         ((LL band 16#03) bsl 2) bor (LM bsr 2),
+     16#80 bor ((LM band 16#03) bsl 4) bor LR].
+
 hexval(C) ->
     case C bor 16#20 of
         Cd when Cd < $a ->
             Cd-$0;
         Cl ->
-            Cl-$a
+            10+Cl-$a
     end.
 
 num(Bin, Stack) ->
