@@ -1,7 +1,7 @@
 %% @doc fast json parsing
 -module(fj).
 
--export([parse/1]).
+-export([decode/1, parse/1]).
 
 -define(START_OBJECT, start_object).
 -define(START_ARRAY, start_array).
@@ -43,9 +43,9 @@ value(<<32, Bin/binary>>, Stack) ->    %space
     value(Bin, Stack);
 value(<<9, Bin/binary>>, Stack) ->     %tab
     value(Bin, Stack);
-value(<<10, Bin/binary>>, Stack) ->    %carriage return
+value(<<10, Bin/binary>>, Stack) ->    %line feed
     value(Bin, Stack);
-value(<<13, Bin/binary>>, Stack) ->    %line feed
+value(<<13, Bin/binary>>, Stack) ->    %carriage return
     value(Bin, Stack);
 value(<<>>, Result) ->
     Result;
@@ -67,14 +67,28 @@ end_object([Value,Key|Stack], Obj) ->
     end_object(Stack, [{Key, Value}|Obj]).
 
 str(Bin, Stack) ->
-    str(Bin, Stack, false, []).
-str(<<$", Bin/binary>>, Stack, false, Rev) ->
+    str(Bin, Stack, []).
+str(<<$", Bin/binary>>, Stack, Rev) ->
     value(Bin, [list_to_binary(lists:reverse(Rev))|Stack]);
-str(<<$\\, Bin/binary>>, Stack, false, Rev) ->
-    str(Bin, Stack, true, Rev);
-str(<<C, Bin/binary>>, Stack, _, Rev) ->
-    str(Bin, Stack, false, [C|Rev]).
-%% TODO: unicode
+str(<<$\\, $", Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [$"|Rev]);
+str(<<$\\, $\\, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [$\\|Rev]);
+str(<<$\\, $/, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [$/|Rev]);
+str(<<$\\, $b, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [8|Rev]);
+str(<<$\\, $f, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [10|Rev]);
+str(<<$\\, $n, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [10,13|Rev]);
+str(<<$\\, $r, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [13|Rev]);
+str(<<$\\, $t, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [9|Rev]);
+str(<<C, Bin/binary>>, Stack, Rev) ->
+    str(Bin, Stack, [C|Rev]).
+%% TODO: unicode & escape sequences
 
 num(Bin, Stack) ->
     num(Bin, Stack, false, []).
