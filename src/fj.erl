@@ -86,9 +86,46 @@ str(<<$\\, $r, Bin/binary>>, Stack, Rev) ->
     str(Bin, Stack, [13|Rev]);
 str(<<$\\, $t, Bin/binary>>, Stack, Rev) ->
     str(Bin, Stack, [9|Rev]);
+str(<<$\\, $u, A, B, C, D, Bin/binary>>, Stack, Rev) ->
+    case {A bor 16#20, B bor 16#20} of
+        {$d, Bl} when (Bl >= $8 andalso Bl =< $9);
+                      (Bl >= $a andalso Bl =< $c) ->
+            %% coalesce UTF-16 surrogate pair
+            <<$\\, $u, E, F, G, H, Bin2/binary>> = Bin,
+            str(Bin2, Stack, [utf16(A,B,C,D,E,F,G,H)|Rev]);
+        _ ->
+            str(Bin, Stack, [utf8(A,B,C,D)|Rev])
+    end;
 str(<<C, Bin/binary>>, Stack, Rev) ->
     str(Bin, Stack, [C|Rev]).
-%% TODO: unicode & escape sequences
+
+utf16(A, B, C, D, E, F, G, H) ->
+    throw(todo).
+
+utf8($0, $0, C, D) ->
+    list_to_integer([C,D], 16);
+utf8($0, B, C, D) when B < $8 ->
+    Left = (B-$0) band 16#07,
+    Middle = hexval(C),
+    Right = hexval(D),
+    [16#C0 bor (Left bsl 2) bor (Middle bsr 2),
+     16#80 bor ((Middle bsl 6) band 16#FF) bor Right];
+utf8(A, B, C, D) ->
+    Left = hexval(A),
+    LeftMid = hexval(B),
+    Middle = hexval(C),
+    Right = hexval(D),
+    [16#E0 bor Left,
+     16#80 bor (LeftMid bsl 2) bor (Middle bsr 2),
+     16#80 bor ((Middle bsl 6) band 16#FF) bor Right].
+
+hexval(C) ->
+    case C bor 16#20 of
+        Cd when Cd < $a ->
+            Cd-$0;
+        Cl ->
+            Cl-$a
+    end.
 
 num(Bin, Stack) ->
     num(Bin, Stack, false, []).
