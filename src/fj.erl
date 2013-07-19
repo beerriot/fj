@@ -39,13 +39,13 @@ value(<<"false", Bin/binary>>, Stack) ->
     value(Bin, [false|Stack]);
 value(<<"null", Bin/binary>>, Stack) ->
     value(Bin, [null|Stack]);
-value(<<32, Bin/binary>>, Stack) ->    %space
+value(<<$\s, Bin/binary>>, Stack) ->
     value(Bin, Stack);
-value(<<9, Bin/binary>>, Stack) ->     %tab
+value(<<$\t, Bin/binary>>, Stack) ->
     value(Bin, Stack);
-value(<<10, Bin/binary>>, Stack) ->    %line feed
+value(<<$\n, Bin/binary>>, Stack) ->
     value(Bin, Stack);
-value(<<13, Bin/binary>>, Stack) ->    %carriage return
+value(<<$\r, Bin/binary>>, Stack) ->
     value(Bin, Stack);
 value(<<>>, Result) ->
     Result;
@@ -77,15 +77,15 @@ str(<<$\\, $\\, Bin/binary>>, Stack, Rev) ->
 str(<<$\\, $/, Bin/binary>>, Stack, Rev) ->
     str(Bin, Stack, [$/|Rev]);
 str(<<$\\, $b, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [8|Rev]);
+    str(Bin, Stack, [$\b|Rev]);
 str(<<$\\, $f, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [10|Rev]);
+    str(Bin, Stack, [$\f|Rev]);
 str(<<$\\, $n, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [10,13|Rev]);
+    str(Bin, Stack, [$\n|Rev]);
 str(<<$\\, $r, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [13|Rev]);
+    str(Bin, Stack, [$\r|Rev]);
 str(<<$\\, $t, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [9|Rev]);
+    str(Bin, Stack, [$\t|Rev]);
 str(<<$\\, $u, A, B, C, D, Bin/binary>>, Stack, Rev) ->
     case {A bor 16#20, B bor 16#20} of
         {$d, Bl} when (Bl >= $8 andalso Bl =< $9);
