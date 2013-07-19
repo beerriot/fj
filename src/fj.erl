@@ -13,10 +13,22 @@ decode(Bin) ->
 
 parse(Bin) when is_binary(Bin) ->
     case catch value(Bin, []) of
-        {error, Rest} ->
-            {error, byte_size(Bin)-byte_size(Rest)};
-        [Value] ->
-            {ok, Value}
+        {error, Reason, Rest} ->
+            {error, {Reason, byte_size(Bin)-byte_size(Rest)}};
+        {'EXIT', {function_clause, [{fj, _, [Remaining, Stack|_], _}|_]}}
+          when is_binary(Remaining), is_list(Stack) ->
+            case Remaining of
+                <<>> ->
+                    {error, {premature_end, byte_size(Bin)}};
+                _ ->
+                    {error, {unexpected,
+                             byte_size(Bin)-byte_size(Remaining)}}
+            end;
+        {ok, [Value]} when Value /= ?START_OBJECT,
+                           Value /= ?START_ARRAY ->
+            {ok, Value};
+        {ok, _} ->
+            {error, {premature_end, byte_size(Bin)}}
     end.
 
 value(<<${, Bin/binary>>, Stack) ->
@@ -48,7 +60,7 @@ value(<<$\n, Bin/binary>>, Stack) ->
 value(<<$\r, Bin/binary>>, Stack) ->
     value(Bin, Stack);
 value(<<>>, Result) ->
-    Result;
+    {ok, Result};
 value(Bin, Stack) ->
     num(Bin, Stack).
 
@@ -185,7 +197,8 @@ eint(Bin, Stack, Rev, flo) ->
 int_final(Bin, Stack, Rev) ->
     case catch list_to_integer(lists:reverse(Rev)) of
         {'EXIT', _} ->
-            throw({error, Bin});
+            throw({error, bad_integer,
+                   list_to_binary([lists:reverse(Rev),Bin])});
         Int ->
             value(Bin, [Int|Stack])
     end.
@@ -193,7 +206,8 @@ int_final(Bin, Stack, Rev) ->
 flo_final(Bin, Stack, Rev) ->
     case catch list_to_float(lists:reverse(Rev)) of
         {'EXIT', _} ->
-            throw({error, Bin});
+            throw({error, bad_float,
+                   list_to_binary([lists:reverse(Rev)|Bin])});
         Float ->
             value(Bin, [Float|Stack])
     end.
