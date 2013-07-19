@@ -63,7 +63,7 @@ end_object(Stack) ->
     end_object(Stack, []).
 end_object([?START_OBJECT|Stack], Obj) ->
     [{struct, Obj}|Stack];
-end_object([Value,Key|Stack], Obj) ->
+end_object([Value,Key|Stack], Obj) when is_binary(Key) ->
     end_object(Stack, [{Key, Value}|Obj]).
 
 str(Bin, Stack) ->
