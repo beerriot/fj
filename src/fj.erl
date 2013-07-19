@@ -141,30 +141,59 @@ hexval(C) ->
             10+Cl-$a
     end.
 
-num(Bin, Stack) ->
-    num(Bin, Stack, false, []).
+-define(DIGIT(C), (C >= $0 andalso C =< $9)).
 
-num(<<$-, Bin/binary>>, Stack, Dec, Rev) ->
-    num(Bin, Stack, Dec, [$-|Rev]);
-num(<<$., Bin/binary>>, Stack, _, Rev) ->
-    num(Bin, Stack, true, [$.|Rev]);
-num(<<$e, Bin/binary>>, Stack, Dec, Rev) ->
-    num(Bin, Stack, Dec, [$e|Rev]);
-num(<<$E, Bin/binary>>, Stack, Dec, Rev) ->
-    num(Bin, Stack, Dec, [$e|Rev]);
-num(<<C, Bin/binary>>, Stack, Dec, Rev) when C >= $0, C =< $9 ->
-    num(Bin, Stack, Dec, [C|Rev]);
-num(Bin, Stack, true, Rev) ->
-    case catch list_to_float(lists:reverse(Rev)) of
-        {'EXIT', _} ->
-            throw({error, Bin});
-        Float ->
-            value(Bin, [Float|Stack])
-    end;
-num(Bin, Stack, false, Rev) ->
+num(<<$-, Bin/binary>>, Stack) ->
+    int(Bin, Stack, [$-]);
+num(<<C, Bin/binary>>, Stack) when ?DIGIT(C) ->
+    int(Bin, Stack, [C]).
+
+int(<<$., Bin/binary>>, Stack, Rev) ->
+    flo(Bin, Stack, [$.|Rev]);
+int(<<$e, Bin/binary>>, Stack, Rev) ->
+    esign(Bin, Stack, [$e|Rev], int);
+int(<<$E, Bin/binary>>, Stack, Rev) ->
+    esign(Bin, Stack, [$e|Rev], int);
+int(<<C, Bin/binary>>, Stack, Rev) when ?DIGIT(C) ->
+    int(Bin, Stack, [C|Rev]);
+int(Bin, Stack, Rev) ->
+    int_final(Bin, Stack, Rev).
+
+flo(<<$e, Bin/binary>>, Stack, Rev) ->
+    esign(Bin, Stack, [$e|Rev], flo);
+flo(<<$E, Bin/binary>>, Stack, Rev) ->
+    esign(Bin, Stack, [$e|Rev], flo);
+flo(<<C, Bin/binary>>, Stack, Rev) when ?DIGIT(C) ->
+    flo(Bin, Stack, [C|Rev]);
+flo(Bin, Stack, Rev) ->
+    flo_final(Bin, Stack, Rev).
+
+esign(<<$-, Bin/binary>>, Stack, Rev, Dec) ->
+    eint(Bin, Stack, [$-|Rev], Dec);
+esign(<<$+, Bin/binary>>, Stack, Rev, Dec) ->
+    eint(Bin, Stack, Rev, Dec);
+esign(<<C, Bin/binary>>, Stack, Rev, Dec) when ?DIGIT(C) ->
+    eint(Bin, Stack, [C|Rev], Dec).
+
+eint(<<C, Bin/binary>>, Stack, Rev, Dec) when ?DIGIT(C) ->
+    eint(Bin, Stack, [C|Rev], Dec);
+eint(Bin, Stack, Rev, int) ->
+    int_final(Bin, Stack, Rev);
+eint(Bin, Stack, Rev, flo) ->
+    flo_final(Bin, Stack, Rev).
+
+int_final(Bin, Stack, Rev) ->
     case catch list_to_integer(lists:reverse(Rev)) of
         {'EXIT', _} ->
             throw({error, Bin});
         Int ->
             value(Bin, [Int|Stack])
+    end.
+
+flo_final(Bin, Stack, Rev) ->
+    case catch list_to_float(lists:reverse(Rev)) of
+        {'EXIT', _} ->
+            throw({error, Bin});
+        Float ->
+            value(Bin, [Float|Stack])
     end.
