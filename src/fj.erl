@@ -1,4 +1,10 @@
 %% @doc fast json parsing
+%%
+%% Very important: all binary matching done is optimized such that no
+%% sub-binaries are created (match contexts are re-used). This helps
+%% keep garbage production to a minimum. Use the erlc option
+%% +bin_opt_info to check for places where this optimization is not
+%% applied.
 -module(fj).
 
 -export([decode/1, parse/1]).
@@ -16,9 +22,8 @@ parse(Bin) when is_binary(Bin) ->
         {error, Reason, Rest} ->
             {error, {Reason, byte_size(Bin)-byte_size(Rest)}};
         {'EXIT', {function_clause,
-                  [{fj, N, [Remaining, Stack|_], _}|_]=Call}}
+                  [{fj, _Name, [Remaining, Stack|_], _}|_]}}
           when is_binary(Remaining), is_list(Stack) ->
-            io:format("===~n~p~n~p~n===~n", [N, Call]),
             case Remaining of
                 <<>> ->
                     {error, {unexpected_end, byte_size(Bin)}};
