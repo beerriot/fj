@@ -92,7 +92,7 @@ end_object(Current) ->
     end_object(Current, []).
 end_object([], Obj) ->
     {struct, Obj};
-end_object([Value,Key|Current], Obj) when is_binary(Key) ->
+end_object([Value,Key|Current], Obj) ->
     end_object(Current, [{Key, Value}|Obj]).
 
 str(<<$", Bin/binary>>, Stack, Current, Next, Rev) ->
