@@ -51,3 +51,10 @@ extra_comma_test_() ->
      ?_FJP(<<"{\"a\":1,}">>, {ok, {struct, [{<<"a">>, 1}]}}),
      ?_FJP(<<"{\"a\":1,,}">>, {error, {unexpected_char, 7}})
     ].
+
+missing_separator_test_() ->
+    [
+     ?_FJP(<<"[1 2]">>, {error, {unexpected_char, 3}}),
+     ?_FJP(<<"{\"a\" 1}">>, {error, {unexpected_char, 5}}),
+     ?_FJP(<<"{\"a\":1 \"b\":2}">>, {error, {unexpected_char, 7}})
+    ].
