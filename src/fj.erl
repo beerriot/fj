@@ -12,11 +12,13 @@ decode(Bin) ->
     Value.
 
 parse(Bin) when is_binary(Bin) ->
-    case catch value(Bin, []) of
+    case catch value(Bin, [], [], done) of
         {error, Reason, Rest} ->
             {error, {Reason, byte_size(Bin)-byte_size(Rest)}};
-        {'EXIT', {function_clause, [{fj, _, [Remaining, Stack|_], _}|_]}}
+        {'EXIT', {function_clause,
+                  [{fj, N, [Remaining, Stack|_], _}|_]=Call}}
           when is_binary(Remaining), is_list(Stack) ->
+            io:format("===~n~p~n~p~n===~n", [N, Call]),
             case Remaining of
                 <<>> ->
                     {error, {premature_end, byte_size(Bin)}};
@@ -31,85 +33,95 @@ parse(Bin) when is_binary(Bin) ->
             {error, {premature_end, byte_size(Bin)}}
     end.
 
-value(<<${, Bin/binary>>, Stack) ->
-    value(Bin, [?START_OBJECT|Stack]);
-value(<<$}, Bin/binary>>, Stack) ->
-    value(Bin, end_object(Stack));
-value(<<$:, Bin/binary>>, Stack) ->
-    value(Bin, Stack);
-value(<<$[, Bin/binary>>, Stack) ->
-    value(Bin, [?START_ARRAY|Stack]);
-value(<<$], Bin/binary>>, Stack) ->
-    value(Bin, end_array(Stack));
-value(<<$,, Bin/binary>>, Stack) ->
-    value(Bin, Stack);
-value(<<$", Bin/binary>>, Stack) ->
-    str(Bin, Stack);
-value(<<"true", Bin/binary>>, Stack) ->
-    value(Bin, [true|Stack]);
-value(<<"false", Bin/binary>>, Stack) ->
-    value(Bin, [false|Stack]);
-value(<<"null", Bin/binary>>, Stack) ->
-    value(Bin, [null|Stack]);
-value(<<$\s, Bin/binary>>, Stack) ->
-    value(Bin, Stack);
-value(<<$\t, Bin/binary>>, Stack) ->
-    value(Bin, Stack);
-value(<<$\n, Bin/binary>>, Stack) ->
-    value(Bin, Stack);
-value(<<$\r, Bin/binary>>, Stack) ->
-    value(Bin, Stack);
-value(<<>>, Result) ->
-    {ok, Result};
-value(Bin, Stack) ->
-    num(Bin, Stack).
+value(<<${, Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, [{Next, Current}|Stack], [], obj_key);
+value(<<$[, Bin/binary>>, Stack, Current, Next) ->
+    value(Bin, [{Next, Current}|Stack], [], array_comma);
+value(<<$", Bin/binary>>, Stack, Current, Next) ->
+    str(Bin, Stack, Current, Next);
+value(<<"true", Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, [true|Current], Next);
+value(<<"false", Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, [false|Current], Next);
+value(<<"null", Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, [null|Current], Next);
+value(<<$\s, Bin/binary>>, Stack, Current, Next) ->
+    value(Bin, Stack, Current, Next);
+value(<<$\t, Bin/binary>>, Stack, Current, Next) ->
+    value(Bin, Stack, Current, Next);
+value(<<$\n, Bin/binary>>, Stack, Current, Next) ->
+    value(Bin, Stack, Current, Next);
+value(<<$\r, Bin/binary>>, Stack, Current, Next) ->
+    value(Bin, Stack, Current, Next);
+value(Bin, Stack, Current, Next) ->
+    num(Bin, Stack, Current, Next).
 
-end_array(Stack) ->
-    end_array(Stack, []).
-end_array([?START_ARRAY|Stack], Array) ->
-    [Array|Stack];
-end_array([Item|Stack], Array) ->
-    end_array(Stack, [Item|Array]).
+next(<<$", Bin/binary>>, Stack, Current, obj_key) ->
+    str(Bin, Stack, Current, obj_colon);
+next(<<$:, Bin/binary>>, Stack, Current, obj_colon) ->
+    value(Bin, Stack, Current, obj_comma);
+next(<<$,, Bin/binary>>, Stack, Current, obj_comma) ->
+    next(Bin, Stack, Current, obj_key);
+next(<<$}, Bin/binary>>, [{Next, HD}|Stack], Current, KEYCOMMA)
+  when KEYCOMMA == obj_key; KEYCOMMA == obj_comma ->
+    next(Bin, Stack, [end_object(Current)|HD], Next);
+next(<<$,, Bin/binary>>, Stack, Current, array_comma) ->
+    value(Bin, Stack, Current, array_comma);
+next(<<$], Bin/binary>>, [{Next, HD}|Stack], Current, array_comma) ->
+    next(Bin, Stack, [end_array(Current)|HD], Next);
+next(<<$\s, Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, Current, Next);
+next(<<$\t, Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, Current, Next);
+next(<<$\n, Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, Current, Next);
+next(<<$\r, Bin/binary>>, Stack, Current, Next) ->
+    next(Bin, Stack, Current, Next);
+next(<<>>, [], Result, done) ->
+    {ok, lists:reverse(Result)}.
 
-end_object(Stack) ->
-    end_object(Stack, []).
-end_object([?START_OBJECT|Stack], Obj) ->
-    [{struct, Obj}|Stack];
-end_object([Value,Key|Stack], Obj) when is_binary(Key) ->
-    end_object(Stack, [{Key, Value}|Obj]).
+end_array(Current) ->
+    lists:reverse(Current).
 
-str(Bin, Stack) ->
-    str(Bin, Stack, []).
-str(<<$", Bin/binary>>, Stack, Rev) ->
-    value(Bin, [list_to_binary(lists:reverse(Rev))|Stack]);
-str(<<$\\, $", Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$"|Rev]);
-str(<<$\\, $\\, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$\\|Rev]);
-str(<<$\\, $/, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$/|Rev]);
-str(<<$\\, $b, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$\b|Rev]);
-str(<<$\\, $f, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$\f|Rev]);
-str(<<$\\, $n, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$\n|Rev]);
-str(<<$\\, $r, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$\r|Rev]);
-str(<<$\\, $t, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [$\t|Rev]);
-str(<<$\\, $u, A, B, C, D, Bin/binary>>, Stack, Rev) ->
+end_object(Current) ->
+    end_object(Current, []).
+end_object([], Obj) ->
+    {struct, Obj};
+end_object([Value,Key|Current], Obj) when is_binary(Key) ->
+    end_object(Current, [{Key, Value}|Obj]).
+
+str(Bin, Stack, Current, Next) ->
+    str(Bin, Stack, Current, Next, []).
+str(<<$", Bin/binary>>, Stack, Current, Next, Rev) ->
+    next(Bin, Stack, [list_to_binary(lists:reverse(Rev))|Current], Next);
+str(<<$\\, $", Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$"|Rev]);
+str(<<$\\, $\\, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$\\|Rev]);
+str(<<$\\, $/, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$/|Rev]);
+str(<<$\\, $b, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$\b|Rev]);
+str(<<$\\, $f, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$\f|Rev]);
+str(<<$\\, $n, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$\n|Rev]);
+str(<<$\\, $r, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$\r|Rev]);
+str(<<$\\, $t, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [$\t|Rev]);
+str(<<$\\, $u, A, B, C, D, Bin/binary>>, St,Cu,Ne, Rev) ->
     case {A bor 16#20, B bor 16#20} of
         {$d, Bl} when (Bl >= $8 andalso Bl =< $9);
                       (Bl >= $a andalso Bl =< $c) ->
             %% coalesce UTF-16 surrogate pair
             <<$\\, $u, E, F, G, H, Bin2/binary>> = Bin,
-            str(Bin2, Stack, [utf8(A,B,C,D,E,F,G,H)|Rev]);
+            str(Bin2, St,Cu,Ne, [utf8(A,B,C,D,E,F,G,H)|Rev]);
         _ ->
-            str(Bin, Stack, [utf8(A,B,C,D)|Rev])
+            str(Bin, St,Cu,Ne, [utf8(A,B,C,D)|Rev])
     end;
-str(<<C, Bin/binary>>, Stack, Rev) ->
-    str(Bin, Stack, [C|Rev]).
+str(<<C, Bin/binary>>, St,Cu,Ne, Rev) ->
+    str(Bin, St,Cu,Ne, [C|Rev]).
 
 utf8($0, $0, C, D) ->
     list_to_integer([C,D], 16);
@@ -155,59 +167,59 @@ hexval(C) ->
 
 -define(DIGIT(C), (C >= $0 andalso C =< $9)).
 
-num(<<$-, Bin/binary>>, Stack) ->
-    int(Bin, Stack, [$-]);
-num(<<C, Bin/binary>>, Stack) when ?DIGIT(C) ->
-    int(Bin, Stack, [C]).
+num(<<$-, Bin/binary>>, Stack, Current, Next) ->
+    int(Bin, Stack, Current, Next, [$-]);
+num(<<C, Bin/binary>>, Stack, Current, Next) when ?DIGIT(C) ->
+    int(Bin, Stack, Current, Next, [C]).
 
-int(<<$., Bin/binary>>, Stack, Rev) ->
-    flo(Bin, Stack, [$.|Rev]);
-int(<<$e, Bin/binary>>, Stack, Rev) ->
-    esign(Bin, Stack, [$e|Rev], int);
-int(<<$E, Bin/binary>>, Stack, Rev) ->
-    esign(Bin, Stack, [$e|Rev], int);
-int(<<C, Bin/binary>>, Stack, Rev) when ?DIGIT(C) ->
-    int(Bin, Stack, [C|Rev]);
-int(Bin, Stack, Rev) ->
-    int_final(Bin, Stack, Rev).
+int(<<$., Bin/binary>>, St,Cu,Ne, Rev) ->
+    flo(Bin, St,Cu,Ne, [$.|Rev]);
+int(<<$e, Bin/binary>>, St,Cu,Ne, Rev) ->
+    esign(Bin, St,Cu,Ne, [$e|Rev], int);
+int(<<$E, Bin/binary>>, St,Cu,Ne, Rev) ->
+    esign(Bin, St,Cu,Ne, [$e|Rev], int);
+int(<<C, Bin/binary>>, St,Cu,Ne, Rev) when ?DIGIT(C) ->
+    int(Bin, St,Cu,Ne, [C|Rev]);
+int(Bin, St,Cu,Ne, Rev) ->
+    int_final(Bin, St,Cu,Ne, Rev).
 
-flo(<<$e, Bin/binary>>, Stack, Rev) ->
-    esign(Bin, Stack, [$e|Rev], flo);
-flo(<<$E, Bin/binary>>, Stack, Rev) ->
-    esign(Bin, Stack, [$e|Rev], flo);
-flo(<<C, Bin/binary>>, Stack, Rev) when ?DIGIT(C) ->
-    flo(Bin, Stack, [C|Rev]);
-flo(Bin, Stack, Rev) ->
-    flo_final(Bin, Stack, Rev).
+flo(<<$e, Bin/binary>>, St,Cu,Ne, Rev) ->
+    esign(Bin, St,Cu,Ne, [$e|Rev], flo);
+flo(<<$E, Bin/binary>>, St,Cu,Ne, Rev) ->
+    esign(Bin, St,Cu,Ne, [$e|Rev], flo);
+flo(<<C, Bin/binary>>, St,Cu,Ne, Rev) when ?DIGIT(C) ->
+    flo(Bin, St,Cu,Ne, [C|Rev]);
+flo(Bin, St,Cu,Ne, Rev) ->
+    flo_final(Bin, St,Cu,Ne, Rev).
 
-esign(<<$-, Bin/binary>>, Stack, Rev, Dec) ->
-    eint(Bin, Stack, [$-|Rev], Dec);
-esign(<<$+, Bin/binary>>, Stack, Rev, Dec) ->
-    eint(Bin, Stack, Rev, Dec);
-esign(<<C, Bin/binary>>, Stack, Rev, Dec) when ?DIGIT(C) ->
-    eint(Bin, Stack, [C|Rev], Dec).
+esign(<<$-, Bin/binary>>, St,Cu,Ne, Rev, Dec) ->
+    eint(Bin, St,Cu,Ne, [$-|Rev], Dec);
+esign(<<$+, Bin/binary>>, St,Cu,Ne, Rev, Dec) ->
+    eint(Bin, St,Cu,Ne, Rev, Dec);
+esign(<<C, Bin/binary>>, St,Cu,Ne, Rev, Dec) when ?DIGIT(C) ->
+    eint(Bin, St,Cu,Ne, [C|Rev], Dec).
 
-eint(<<C, Bin/binary>>, Stack, Rev, Dec) when ?DIGIT(C) ->
-    eint(Bin, Stack, [C|Rev], Dec);
-eint(Bin, Stack, Rev, int) ->
-    int_final(Bin, Stack, Rev);
-eint(Bin, Stack, Rev, flo) ->
-    flo_final(Bin, Stack, Rev).
+eint(<<C, Bin/binary>>, St,Cu,Ne, Rev, Dec) when ?DIGIT(C) ->
+    eint(Bin, St,Cu,Ne, [C|Rev], Dec);
+eint(Bin, St,Cu,Ne, Rev, int) ->
+    int_final(Bin, St,Cu,Ne, Rev);
+eint(Bin, St,Cu,Ne, Rev, flo) ->
+    flo_final(Bin, St,Cu,Ne, Rev).
 
-int_final(Bin, Stack, Rev) ->
+int_final(Bin, Stack, Current, Next, Rev) ->
     case catch list_to_integer(lists:reverse(Rev)) of
         {'EXIT', _} ->
             throw({error, bad_integer,
                    list_to_binary([lists:reverse(Rev),Bin])});
         Int ->
-            value(Bin, [Int|Stack])
+            next(Bin, Stack, [Int|Current], Next)
     end.
 
-flo_final(Bin, Stack, Rev) ->
+flo_final(Bin, Stack, Current, Next, Rev) ->
     case catch list_to_float(lists:reverse(Rev)) of
         {'EXIT', _} ->
             throw({error, bad_float,
                    list_to_binary([lists:reverse(Rev)|Bin])});
         Float ->
-            value(Bin, [Float|Stack])
+            next(Bin, Stack, [Float|Current], Next)
     end.

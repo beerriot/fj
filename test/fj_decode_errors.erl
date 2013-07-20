@@ -25,3 +25,11 @@ invalid_integer_test_() ->
      ?_FJP(<<"-">>, {error, {bad_integer, 0}}),
      ?_FJP(<<"1ee1">>, {error, {unexpected, 2}})
     ].
+
+unbalanced_test_() ->
+    [
+     ?_FJP(<<"[{\"foo\":1]">>, {error, {unexpected, 9}}),
+     ?_FJP(<<"[{\"foo\":1]}">>, {error, {unexpected, 9}}),
+     ?_FJP(<<"{\"foo\":[1}">>, {error, {unexpected, 9}}),
+     ?_FJP(<<"{\"foo\":[1}]">>, {error, {unexpected, 9}})
+    ].
