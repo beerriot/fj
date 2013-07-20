@@ -1,22 +1,45 @@
 %% @doc fast json parsing
 %%
+%% It is expected that the input binary will contain exactly one
+%% complete JSON value. Zero values, a partial value, or more than one
+%% value (including an non-whitespace after the end of the value) will
+%% result in an error.
+%%
 %% Very important: all binary matching done is optimized such that no
 %% sub-binaries are created (match contexts are re-used). This helps
 %% keep garbage production to a minimum. Use the erlc option
 %% +bin_opt_info to check for places where this optimization is not
 %% applied.
+%%
+%% The binary optimization is what requires the parsing process to be
+%% written as a tail-recursive iteration, keeping track of its own
+%% "stack" in a list instead of using the call stack. Returning the
+%% unused portion of the binary from some recursive descent would
+%% prevent the optimization.
+%%
+%% Avoiding garbage production is also the reason for separating
+%% processing state into four parameters, instead of encapsulating it
+%% in one record.
 -module(fj).
 
 -export([decode/1, parse/1]).
 
--define(START_OBJECT, start_object).
--define(START_ARRAY, start_array).
+-type next() :: obj_key | obj_colon | obj_comma
+              | array_comma
+              | done.
+-type value() :: true | false | null
+               | binary()
+               | number()
+               | [value()]
+               | {struct, [{binary(), value()}]}.
 
 %% @doc mochijson2 compatibility
 decode(Bin) ->
     {ok, Value} = parse(Bin),
     Value.
 
+%% @doc Parse a binary, return a mochijson2-compatible structure.
+%% Errors are of the form `{error, {Reason, ByteOffset}}'.
 parse(Bin) when is_binary(Bin) ->
     case catch value(Bin, [], [], done) of
         {error, Reason, Rest} ->
@@ -31,13 +54,41 @@ parse(Bin) when is_binary(Bin) ->
                     {error, {unexpected_char,
                              byte_size(Bin)-byte_size(Remaining)}}
             end;
-        {ok, [Value]} when Value /= ?START_OBJECT,
-                           Value /= ?START_ARRAY ->
+        {ok, [Value]} ->
             {ok, Value};
         {ok, _} ->
+            %% no values, or many values
             {error, {unexpected_end, byte_size(Bin)}}
     end.
 
+%% @doc Start looking for a value.
+%%
+%% Both value/4 and next/4 use the same argument pattern:
+%% <ol>
+%%
+%% <li>`RemainingBinary' is what is left to parse of the input
+%% blob</li>
+%%
+%% <li>`Stack' is the postponed state of processing while we parse an
+%% inner array or object. Each entry is a 2-tuple of `{N, C}' where
+%% `N' was the value of the `Next' parameter when nested parsing
+%% began, and `C' is the value of the `Current' parameter at the same
+%% time.</li>
+%%
+%% <li>`Current' is the state of the innermost element processing. For
+%% arrays, this is the reverse list of elements parsed so far. For
+%% objects, it is the reversed list of key/value pairs, such that the
+%% last element in the list is the first key found, and the next to
+%% last element is the first key's value, with the rest of the
+%% elements continuing this alternating pattern.</li>
+%%
+%% <li>`Next' is the next state we'll be in after a value is
+%% parsed. This is how strict parsing (requiring colons, commas,
+%% balanced brackets, etc.)  is enforced.</li>
+%%
+%% </ol>
+-spec value(binary(), [{next(), [value()]}], [value()], next())
+        -> {ok, [value()]}.
 value(<<${, Bin/binary>>, Stack, Current, Next) ->
     next(Bin, [{Next, Current}|Stack], [], obj_key);
 value(<<$[, Bin/binary>>, Stack, Current, Next) ->
@@ -61,6 +112,11 @@ value(<<$\r, Bin/binary>>, Stack, Current, Next) ->
 value(Bin, Stack, Current, Next) ->
     num(Bin, Stack, Current, Next).
 
+%% @doc The other half of the processing. This part looks for specific
+%% next items like colons and commas. See value/4 for details on
+%% parameter types.
+-spec next(binary(), [{next(), [value()]}], [value()], next())
+        -> {ok, [value()]}.
 next(<<$", Bin/binary>>, Stack, Current, obj_key) ->
     str(Bin, Stack, Current, obj_colon, []);
 next(<<$:, Bin/binary>>, Stack, Current, obj_colon) ->
