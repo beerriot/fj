@@ -26,10 +26,28 @@ invalid_integer_test_() ->
      ?_FJP(<<"1ee1">>, {error, {unexpected_char, 2}})
     ].
 
+invalid_float_test_() ->
+    [
+     ?_FJP(<<".1">>, {error, {unexpected_char, 0}}),
+     ?_FJP(<<"0.">>, {error, {bad_float, 0}}),
+     ?_FJP(<<"0.a">>, {error, {bad_float, 0}}),
+     ?_FJP(<<"0.1e">>, {error, {unexpected_end, 4}}),
+     ?_FJP(<<"0.1e+">>, {error, {bad_float, 1}}),
+     ?_FJP(<<"0.1ee">>, {error, {unexpected_char, 4}})
+    ].
+
 unbalanced_test_() ->
     [
      ?_FJP(<<"[{\"foo\":1]">>, {error, {unexpected_char, 9}}),
      ?_FJP(<<"[{\"foo\":1]}">>, {error, {unexpected_char, 9}}),
      ?_FJP(<<"{\"foo\":[1}">>, {error, {unexpected_char, 9}}),
      ?_FJP(<<"{\"foo\":[1}]">>, {error, {unexpected_char, 9}})
+    ].
+
+extra_comma_test_() ->
+    [
+     ?_FJP(<<"[1,2,3,]">>, {error, {unexpected_char, 7}}),
+     %% one trailing comma is allowed for objects - ignoring for now
+     ?_FJP(<<"{\"a\":1,}">>, {ok, {struct, [{<<"a">>, 1}]}}),
+     ?_FJP(<<"{\"a\":1,,}">>, {error, {unexpected_char, 7}})
     ].
