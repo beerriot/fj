@@ -38,7 +38,7 @@ value(<<${, Bin/binary>>, Stack, Current, Next) ->
 value(<<$[, Bin/binary>>, Stack, Current, Next) ->
     value(Bin, [{Next, Current}|Stack], [], array_comma);
 value(<<$", Bin/binary>>, Stack, Current, Next) ->
-    str(Bin, Stack, Current, Next);
+    str(Bin, Stack, Current, Next, []);
 value(<<"true", Bin/binary>>, Stack, Current, Next) ->
     next(Bin, Stack, [true|Current], Next);
 value(<<"false", Bin/binary>>, Stack, Current, Next) ->
@@ -57,7 +57,7 @@ value(Bin, Stack, Current, Next) ->
     num(Bin, Stack, Current, Next).
 
 next(<<$", Bin/binary>>, Stack, Current, obj_key) ->
-    str(Bin, Stack, Current, obj_colon);
+    str(Bin, Stack, Current, obj_colon, []);
 next(<<$:, Bin/binary>>, Stack, Current, obj_colon) ->
     value(Bin, Stack, Current, obj_comma);
 next(<<$,, Bin/binary>>, Stack, Current, obj_comma) ->
@@ -90,8 +90,6 @@ end_object([], Obj) ->
 end_object([Value,Key|Current], Obj) when is_binary(Key) ->
     end_object(Current, [{Key, Value}|Obj]).
 
-str(Bin, Stack, Current, Next) ->
-    str(Bin, Stack, Current, Next, []).
 str(<<$", Bin/binary>>, Stack, Current, Next, Rev) ->
     next(Bin, Stack, [list_to_binary(lists:reverse(Rev))|Current], Next);
 str(<<$\\, $", Bin/binary>>, St,Cu,Ne, Rev) ->
