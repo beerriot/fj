@@ -21,16 +21,16 @@ parse(Bin) when is_binary(Bin) ->
             io:format("===~n~p~n~p~n===~n", [N, Call]),
             case Remaining of
                 <<>> ->
-                    {error, {premature_end, byte_size(Bin)}};
+                    {error, {unexpected_end, byte_size(Bin)}};
                 _ ->
-                    {error, {unexpected,
+                    {error, {unexpected_char,
                              byte_size(Bin)-byte_size(Remaining)}}
             end;
         {ok, [Value]} when Value /= ?START_OBJECT,
                            Value /= ?START_ARRAY ->
             {ok, Value};
         {ok, _} ->
-            {error, {premature_end, byte_size(Bin)}}
+            {error, {unexpected_end, byte_size(Bin)}}
     end.
 
 value(<<${, Bin/binary>>, Stack, Current, Next) ->
