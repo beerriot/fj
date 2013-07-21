@@ -193,16 +193,16 @@ utf8($0, B, C, D) when B < $8 ->
     Left = (B-$0) band 16#07,
     Middle = hexval(C),
     Right = hexval(D),
-    [16#C0 bor (Left bsl 2) bor (Middle bsr 2),
-     16#80 bor ((Middle bsl 6) band 16#FF) bor Right];
+    <<3:2, Left:4, (Middle bsr 2):2,     %% byte 1
+      2:2, Middle:2, Right:4>>;          %% byte 2
 utf8(A, B, C, D) ->
     Left = hexval(A),
     LeftMid = hexval(B),
     Middle = hexval(C),
     Right = hexval(D),
-    [16#E0 bor Left,
-     16#80 bor (LeftMid bsl 2) bor (Middle bsr 2),
-     16#80 bor ((Middle bsl 6) band 16#FF) bor Right].
+    <<14:4, Left:4,                      %% byte 1
+      2:2, LeftMid:4, (Middle bsr 2):2,  %% byte 2
+      2:2, Middle:2, Right:4>>.          %% byte 3
 
 %% @doc Translate the `\u' representation of a UTF-16 surrogate pair
 %% into a four-byte UTF-8 character. The first four arguments (ABCD)
@@ -218,12 +218,10 @@ utf8(_A, B, C, D, _E, F, G, H) -> % A = E = "d"
 
     HL8 = (((HL band 16#03) bsl 2) bor (HM bsr 2))+1,
 
-    [16#F0 bor (HL8 bsr 2),
-     16#80 bor ((HL8 band 16#03) bsl 4) bor
-         ((HM band 16#03) bsl 2) bor (HR bsr 2),
-     16#80 bor ((HR band 16#03) bsl 4) bor
-         ((LL band 16#03) bsl 2) bor (LM bsr 2),
-     16#80 bor ((LM band 16#03) bsl 4) bor LR].
+    <<15:4, 0:2, (HL8 bsr 2):2,          %% byte 1
+      2:2, HL8:2, HM:2, (HR bsr 2):2,    %% byte 2
+      2:2, HR:2, LL:2, (LM bsr 2):2,     %% byte 3
+      2:2, LM:2, LR:4>>.                 %% byte 4
 
 %% @doc Compute the integer value of the hexidecimal character
 %% representation. (0-9 == 0-9, a-f == 10-15, A-F == 10-15). Passing
