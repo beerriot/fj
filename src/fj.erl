@@ -151,6 +151,9 @@ end_object([], Obj) ->
 end_object([Value,Key|Current], Obj) ->
     end_object(Current, [{Key, Value}|Obj]).
 
+%% digit-safe lowercase
+-define(LOWERC(X), (X bor 16#20)).
+
 str(<<$", Bin/binary>>, Stack, Current, Next, Rev) ->
     next(Bin, Stack, [list_to_binary(lists:reverse(Rev))|Current], Next);
 str(<<$\\, $", Bin/binary>>, St,Cu,Ne, Rev) ->
@@ -170,7 +173,7 @@ str(<<$\\, $r, Bin/binary>>, St,Cu,Ne, Rev) ->
 str(<<$\\, $t, Bin/binary>>, St,Cu,Ne, Rev) ->
     str(Bin, St,Cu,Ne, [$\t|Rev]);
 str(<<$\\, $u, A, B, C, D, Bin/binary>>, St,Cu,Ne, Rev) ->
-    case {A bor 16#20, B bor 16#20} of
+    case {?LOWERC(A), ?LOWERC(B)} of
         {$d, Bl} when (Bl >= $8 andalso Bl =< $9);
                       (Bl >= $a andalso Bl =< $c) ->
             %% coalesce UTF-16 surrogate pair
@@ -182,6 +185,8 @@ str(<<$\\, $u, A, B, C, D, Bin/binary>>, St,Cu,Ne, Rev) ->
 str(<<C, Bin/binary>>, St,Cu,Ne, Rev) ->
     str(Bin, St,Cu,Ne, [C|Rev]).
 
+%% @doc Translate the \u representation of a Unicode point into a
+%% UTF-8 character (one-, two-, or three-bytes).
 utf8($0, $0, C, D) ->
     list_to_integer([C,D], 16);
 utf8($0, B, C, D) when B < $8 ->
@@ -199,6 +204,10 @@ utf8(A, B, C, D) ->
      16#80 bor (LeftMid bsl 2) bor (Middle bsr 2),
      16#80 bor ((Middle bsl 6) band 16#FF) bor Right].
 
+%% @doc Translate the `\u' representation of a UTF-16 surrogate pair
+%% into a four-byte UTF-8 character. The first four arguments (ABCD)
+%% are the representation of the first UTF-16 element, and the second
+%% four (EFGH) are the representation of the second UTF-16 element.
 utf8(_A, B, C, D, _E, F, G, H) -> % A = E = "d"
     HL = hexval(B),
     HM = hexval(C),
@@ -216,8 +225,11 @@ utf8(_A, B, C, D, _E, F, G, H) -> % A = E = "d"
          ((LL band 16#03) bsl 2) bor (LM bsr 2),
      16#80 bor ((LM band 16#03) bsl 4) bor LR].
 
+%% @doc Compute the integer value of the hexidecimal character
+%% representation. (0-9 == 0-9, a-f == 10-15, A-F == 10-15). Passing
+%% in characters other than 0-9, a-f, A-F produces meaningless garbage.
 hexval(C) ->
-    case C bor 16#20 of
+    case ?LOWERC(C) of
         Cd when Cd < $a ->
             Cd-$0;
         Cl ->
