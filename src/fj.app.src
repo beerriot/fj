@@ -1,0 +1,12 @@
+{application, fj,
+ [
+  {description, "Fast JSON Decoding"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { fj_app, []}},
+  {env, []}
+ ]}.
